@@ -1,0 +1,35 @@
+name: quiz_application_app
+description: "A new Flutter project."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.12.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  intl: any
+
+  # Firebase Dependencies
+  firebase_core: ^3.15.0
+  firebase_auth: ^5.7.0
+  cloud_firestore: ^5.6.12
+
+  # API এবং লোকাল স্টোরেজ
+  http: ^1.3.0
+  dio: ^5.8.0
+  shared_preferences: ^2.3.5
+
+  cupertino_icons: ^1.0.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
