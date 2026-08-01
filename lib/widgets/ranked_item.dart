@@ -12,6 +12,8 @@ class RankedItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     ColorScheme colorScheme = Theme.of(context).colorScheme;
+    final hasImage = imageUrl.trim().isNotEmpty;
+
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
@@ -32,7 +34,15 @@ class RankedItem extends StatelessWidget {
         title: Row(
           spacing: 12,
           children: [
-            CircleAvatar(radius: 22, backgroundColor: colorScheme.surfaceContainer, backgroundImage: NetworkImage(imageUrl)),
+            CircleAvatar(
+              radius: 22,
+              backgroundColor: colorScheme.surfaceContainer,
+              backgroundImage: hasImage ? NetworkImage(imageUrl) : null,
+              onBackgroundImageError: hasImage ? (_, __) {} : null,
+              child: hasImage
+                  ? null
+                  : Icon(Icons.person, color: colorScheme.onSurfaceVariant),
+            ),
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [

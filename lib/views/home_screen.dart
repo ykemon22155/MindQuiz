@@ -18,13 +18,13 @@ class HomeScreen extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // ওয়েলকাম হেডার
+              // ওয়েলকাম হেডার
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Column(
+                  const Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    children: const [
+                    children: [
                       Text(
                         "Welcome Back! 👋",
                         style: TextStyle(
@@ -53,7 +53,7 @@ class HomeScreen extends StatelessWidget {
               ),
               const SizedBox(height: 24),
 
-              // হোম পেজের কন্টেন্ট বা ক্যাটাগরি স্ক্রিনের উইজেট এখানে সরাসরি দেখাতে পারেন
+              // হোম পেজের কন্টেন্ট বা ক্যাটাগরি স্ক্রিন
               const Expanded(
                 child: CategoryScreen(),
               ),

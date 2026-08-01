@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:quiz_application_app/services/bdapps_auth_service.dart';
 import 'package:quiz_application_app/views/login_screen.dart';
 
@@ -11,8 +10,10 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
+  final BdAppsAuthService _authService = BdAppsAuthService();
+
   String userName = "Guest User";
-  String userEmail = "";
+  String userPhone = "";
   bool isLoading = true;
 
   @override
@@ -21,18 +22,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _loadUserProfile();
   }
 
-  // ফায়ারবেস বা লোকাল সেশন থেকে ইউজারের ডাটা লোড করা
+  // লোকাল সেশন থেকে ইউজারের ফোন নাম্বার লোড করা (কোনো Firebase Auth নেই)
   Future<void> _loadUserProfile() async {
     try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user != null) {
+      final session = await _authService.getStoredAuthSession();
+      if (session != null && session.user.phone.isNotEmpty) {
         setState(() {
-          userName = user.displayName ?? user.email ?? "Quiz User";
-          userEmail = user.email ?? "";
+          userPhone = session.user.phone;
+          userName = "Quiz Player";
           isLoading = false;
         });
       } else {
-        // যদি ফায়ারবেস Auth না থাকে, লোকাল বা ডিফল্ট নাম রাখতে পারেন
+        // কোনো সেশন নেই — গেস্ট হিসেবে দেখাবে
         setState(() {
           isLoading = false;
         });
@@ -91,10 +92,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   color: textColor,
                 ),
               ),
-              if (userEmail.isNotEmpty) ...[
+              if (userPhone.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 Text(
-                  userEmail,
+                  userPhone,
                   style: TextStyle(
                     fontSize: 14,
                     color: textColor.withValues(alpha: 0.7),
@@ -119,9 +120,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
                 onPressed: () async {
-                  // ফায়ারবেস সাইন আউট এবং লোকাল সেশন ক্লিয়ার করা
-                  await FirebaseAuth.instance.signOut();
-                  await BdAppsAuthService().clearStoredAuthSession();
+                  // লোকাল BDApps সেশন ক্লিয়ার করা — কোনো Firebase sign-out দরকার নেই
+                  await _authService.clearStoredAuthSession();
 
                   if (context.mounted) {
                     Navigator.pushAndRemoveUntil(

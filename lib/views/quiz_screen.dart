@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:quiz_application_app/services/bdapps_auth_service.dart';
 import '../services/api_service.dart';
 import '../model/quiz_ques_model.dart';
 import 'result_screen.dart';
@@ -18,6 +18,7 @@ class QuizScreen extends StatefulWidget {
 
 class _QuizScreenState extends State<QuizScreen> {
   final ApiService _apiService = ApiService();
+  final BdAppsAuthService _authService = BdAppsAuthService();
   late Future<List<QuizQuestion>> _questionsFuture;
 
   int _currentQuestionIndex = 0;
@@ -48,7 +49,15 @@ class _QuizScreenState extends State<QuizScreen> {
     });
   }
 
-  // ফায়ারস্টোরে স্কোর সেভ করার মেথড
+  // ফোন নাম্বার আড়াল করে দেখানোর জন্য (যেমন: 017****789)
+  String _maskPhone(String phone) {
+    if (phone.length < 7) return phone;
+    return '${phone.substring(0, 3)}****${phone.substring(phone.length - 3)}';
+  }
+
+  // ফায়ারস্টোরে স্কোর সেভ করার মেথড — এখন ফোন নাম্বার-ভিত্তিক (কোনো Firebase Auth নেই)
+  // ফোন নাম্বার-কে ডকুমেন্ট আইডি হিসেবে ব্যবহার করা হয়েছে যাতে প্রতিবার নতুন এন্ট্রি
+  // তৈরি না হয় — শুধু আগের সেরা স্কোরের চেয়ে বেশি হলেই আপডেট হবে।
   Future<void> _saveScoreToFirestore(int finalScore) async {
     if (_isSubmitting) return;
     setState(() {
@@ -56,22 +65,38 @@ class _QuizScreenState extends State<QuizScreen> {
     });
 
     try {
-      final user = FirebaseAuth.instance.currentUser;
-      String userName = user?.displayName ?? user?.email ?? 'Quiz Player';
+      final session = await _authService.getStoredAuthSession();
+      final phone = session?.user.phone;
 
-      // যদি ইউজার ইমেল বা নাম না থাকে, তবে একটি ডিফল্ট নাম দিতে পারেন
-      if (userName.contains('@')) {
-        userName = userName.split('@')[0]; // ইমেলের আগের অংশ নাম হিসেবে নেওয়া
+      if (phone == null || phone.isEmpty) {
+        debugPrint("No logged-in phone number found; skipping leaderboard save.");
+        return;
       }
 
-      // ফায়ারস্টোরের 'leaderboard' কালেকশনে স্কোর সেভ করা
-      await FirebaseFirestore.instance.collection('leaderboard').add({
-        'name': userName,
-        'score': finalScore,
-        'timestamp': FieldValue.serverTimestamp(),
+      final docRef = FirebaseFirestore.instance.collection('leaderboard').doc(phone);
+
+      await FirebaseFirestore.instance.runTransaction((transaction) async {
+        final snapshot = await transaction.get(docRef);
+        final existingScore = (snapshot.data()?['score'] as num?)?.toInt() ?? 0;
+
+        // শুধু নতুন স্কোর আগের সেরা স্কোরের চেয়ে বেশি হলেই লিখবে
+        if (finalScore > existingScore) {
+          transaction.set(docRef, {
+            'name': _maskPhone(phone),
+            'phone': phone,
+            'score': finalScore,
+            'timestamp': FieldValue.serverTimestamp(),
+          });
+        }
       });
     } catch (e) {
       debugPrint("Failed to save score: $e");
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSubmitting = false;
+        });
+      }
     }
   }
 
@@ -79,7 +104,7 @@ class _QuizScreenState extends State<QuizScreen> {
     _timer?.cancel();
     final currentQuestion = questions[_currentQuestionIndex];
 
-    // উত্তর ঠিক হলে স্কোর বাড়ানো
+    // উত্তর ঠিক হলে স্কোর বাড়ানো
     if (_selectedIndex != -1) {
       if (_selectedIndex == currentQuestion.correctAnswerIndex) {
         setState(() {
@@ -95,7 +120,7 @@ class _QuizScreenState extends State<QuizScreen> {
       });
       _startTimer(questions);
     } else {
-      // কুইজ শেষ! ফায়ারস্টোরে স্কোর সেভ করে তারপর রেজাল্ট স্ক্রিনে যাওয়া
+      // কুইজ শেষ! ফায়ারস্টোরে স্কোর সেভ করে তারপর রেজাল্ট স্ক্রিনে যাওয়া
       await _saveScoreToFirestore(_score);
 
       if (mounted) {

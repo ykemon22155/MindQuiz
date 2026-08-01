@@ -3,6 +3,7 @@ import 'package:quiz_application_app/services/bdapps_api.dart';
 import 'package:quiz_application_app/services/bdapps_auth_service.dart';
 import 'package:quiz_application_app/views/enter_otp_page.dart';
 import 'package:quiz_application_app/views/main_shell.dart';
+import 'package:quiz_application_app/widgets/my_text_field.dart';
 
 /// Primary sign-in screen.
 ///
@@ -21,9 +22,13 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final BdAppsAuthService _bdAuth = BdAppsAuthService();
   final TextEditingController _phoneController = TextEditingController();
+  final _formKey = GlobalKey<FormState>();
 
   bool _isLoading = false;
   String? _errorMessage;
+
+  // Bangladeshi mobile format: 01[3-9]XXXXXXXX (11 digits total)
+  static final RegExp _bdPhoneRegex = RegExp(r'^01[3-9]\d{8}$');
 
   @override
   void dispose() {
@@ -31,20 +36,29 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
+  String? _validatePhone(String? value) {
+    final phone = value?.trim() ?? '';
+    if (phone.isEmpty) return 'Please enter your phone number.';
+    if (!_bdPhoneRegex.hasMatch(phone)) {
+      return 'Enter a valid number, e.g. 01712345678.';
+    }
+    return null;
+  }
+
   void _goToApp() {
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => const MainShell()),
-      (_) => false,
+          (_) => false,
     );
   }
 
   Future<void> _continueWithPhone() async {
+    // Run TextFormField's own validator (via MyTextField) instead of a
+    // hand-rolled length check.
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+
     final phone = _phoneController.text.trim();
-    if (phone.isEmpty || phone.length < 10) {
-      setState(() => _errorMessage = 'Please enter a valid phone number.');
-      return;
-    }
 
     setState(() {
       _isLoading = true;
@@ -67,8 +81,10 @@ class _LoginScreenState extends State<LoginScreen> {
       );
       return;
     } on BdAppsApiException catch (e) {
+      if (!mounted) return;
       setState(() => _errorMessage = e.message);
     } catch (_) {
+      if (!mounted) return;
       setState(() => _errorMessage = 'Something went wrong. Please try again.');
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -93,91 +109,85 @@ class _LoginScreenState extends State<LoginScreen> {
                 padding: isDesktop ? const EdgeInsets.all(32) : EdgeInsets.zero,
                 decoration: isDesktop
                     ? BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(24),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.05),
-                            blurRadius: 20,
-                            offset: const Offset(0, 10),
-                          ),
-                        ],
-                      )
-                    : null,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(24),
-                      decoration: const BoxDecoration(
-                        color: Color(0xFFFFF1E6),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(Icons.psychology, size: 80, color: primaryColor),
-                    ),
-                    const SizedBox(height: 24),
-                    const Text(
-                      'MindQuest',
-                      style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: textColor),
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Learn • Compete • Shine',
-                      style: TextStyle(fontSize: 16, color: Colors.grey),
-                    ),
-                    if (_errorMessage != null) ...[
-                      const SizedBox(height: 24),
-                      Text(
-                        _errorMessage!,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(color: Colors.redAccent),
-                      ),
-                    ],
-                    const SizedBox(height: 40),
-                    TextField(
-                      controller: _phoneController,
-                      keyboardType: TextInputType.phone,
-                      enabled: !_isLoading,
-                      decoration: InputDecoration(
-                        labelText: 'Phone Number (e.g., 01XXXXXXXXX)',
-                        prefixIcon: const Icon(Icons.phone),
-                        filled: true,
-                        fillColor: isDesktop ? const Color(0xFFFFF8F0) : Colors.white,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(20),
-                          borderSide: BorderSide.none,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    SizedBox(
-                      height: 56,
-                      child: ElevatedButton(
-                        onPressed: _isLoading ? null : _continueWithPhone,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF41B3A3),
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          elevation: 0,
-                        ),
-                        child: _isLoading
-                            ? const SizedBox(
-                                height: 22,
-                                width: 22,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2.4,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : const Text(
-                                'Continue with Phone',
-                                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                              ),
-                      ),
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(24),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.05),
+                      blurRadius: 20,
+                      offset: const Offset(0, 10),
                     ),
                   ],
+                )
+                    : null,
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(24),
+                        decoration: const BoxDecoration(
+                          color: Color(0xFFFFF1E6),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.psychology, size: 80, color: primaryColor),
+                      ),
+                      const SizedBox(height: 24),
+                      const Text(
+                        'MindQuest',
+                        style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: textColor),
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Learn • Compete • Shine',
+                        style: TextStyle(fontSize: 16, color: Colors.grey),
+                      ),
+                      if (_errorMessage != null) ...[
+                        const SizedBox(height: 24),
+                        Text(
+                          _errorMessage!,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(color: Colors.redAccent),
+                        ),
+                      ],
+                      const SizedBox(height: 40),
+                      MyTextField(
+                        controller: _phoneController,
+                        label: 'Phone Number (e.g., 01XXXXXXXXX)',
+                        showNumberKeyboardOnly: true,
+                        validator: _validatePhone,
+                      ),
+                      const SizedBox(height: 20),
+                      SizedBox(
+                        height: 56,
+                        child: ElevatedButton(
+                          onPressed: _isLoading ? null : _continueWithPhone,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF41B3A3),
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            elevation: 0,
+                          ),
+                          child: _isLoading
+                              ? const SizedBox(
+                            height: 22,
+                            width: 22,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.4,
+                              color: Colors.white,
+                            ),
+                          )
+                              : const Text(
+                            'Continue with Phone',
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),

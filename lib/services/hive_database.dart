@@ -1,6 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
-import 'package:quiz_application_app/services/auth_service.dart';
+import 'package:quiz_application_app/services/bdapps_auth_service.dart';
 
 /// Firestore-backed replacement for the original Hive-based local question store.
 ///
@@ -11,7 +11,7 @@ class HiveDatabase {
   // Single Firestore collection that stores every locally authored question.
   // Each document id matches the question's `id` field for easy lookup.
   static final CollectionReference<Map<String, dynamic>> _questions =
-      FirebaseFirestore.instance.collection('local_questions');
+  FirebaseFirestore.instance.collection('local_questions');
 
   static bool _initialized = false;
 
@@ -39,11 +39,16 @@ class HiveDatabase {
 
   /// Async variant used by callers that want to await fresh data.
   static Future<List<Map<String, dynamic>>?> fetchQuestions() async {
-    final uid = AuthService().currentUser?.uid;
+    // NOTE: field is still named 'ownerUid' in Firestore for backward
+    // compatibility with any documents already written under the old
+    // Firebase-uid scheme. It now holds a phone number instead. Renaming
+    // the field would require migrating existing docs — do that
+    // separately if you want the naming to match going forward.
+    final ownerKey = BdAppsAuthService().currentPhone;
     try {
       Query<Map<String, dynamic>> query = _questions;
-      if (uid != null) {
-        query = query.where('ownerUid', isEqualTo: uid);
+      if (ownerKey != null) {
+        query = query.where('ownerUid', isEqualTo: ownerKey);
       }
       final snapshot = await query.orderBy('createdAt', descending: true).get();
       final results = snapshot.docs
@@ -70,8 +75,8 @@ class HiveDatabase {
     final payload = Map<String, dynamic>.from(question)..['id'] = id;
 
     try {
-      final uid = AuthService().currentUser?.uid;
-      if (uid != null) payload['ownerUid'] = uid;
+      final ownerKey = BdAppsAuthService().currentPhone;
+      if (ownerKey != null) payload['ownerUid'] = ownerKey;
       payload['createdAt'] = FieldValue.serverTimestamp();
       payload['updatedAt'] = FieldValue.serverTimestamp();
       await _questions.doc(id).set(payload, SetOptions(merge: true));
@@ -94,7 +99,7 @@ class HiveDatabase {
     try {
       await _questions.doc(id).set(payload, SetOptions(merge: true));
       final index =
-          _cache.indexWhere((q) => q['id']?.toString() == id);
+      _cache.indexWhere((q) => q['id']?.toString() == id);
       if (index != -1) _cache[index] = payload;
     } catch (e) {
       debugPrint('HiveDatabase.updateQuestion error: $e');

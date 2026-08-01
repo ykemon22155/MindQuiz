@@ -52,29 +52,14 @@ class BdAppsApi {
         ),
       );
 
-  /// Converts a BD phone number into BDApps subscriberId format:
-  /// tel:8801XXXXXXXXX
-  String toSubscriberId(String phone) {
-    var digits = phone.replaceAll(RegExp(r'\D'), '');
-
-    if (digits.startsWith('8801') && digits.length == 13) {
-      digits = '0${digits.substring(3)}';
-    } else if (digits.startsWith('88') && digits.length == 12) {
-      digits = '0${digits.substring(2)}';
-    } else if (digits.startsWith('0') && digits.length == 11) {
-      // already good
-    } else if (!digits.startsWith('0') && digits.length == 10) {
-      digits = '0$digits';
-    }
-
-    final tenDigits = digits.substring(1);
-    return 'tel:880$tenDigits';
-  }
-
-  /// Normalizes to the bare local-mobile format (e.g. 01XXXXXXXXX) that
-  /// the /otp/request endpoint expects — mirrors the inline logic in
-  /// requestOtp() from api.ts.
-  String _toLocalMobile(String phone) {
+  /// Normalizes any reasonable input (with or without country code,
+  /// spaces, dashes, +) down to the bare local-mobile format the
+  /// backend expects: 01XXXXXXXXX (11 digits, leading 0).
+  ///
+  /// Used by both [toSubscriberId] and [requestOtp] — previously this
+  /// logic was duplicated in two places and had drifted slightly out
+  /// of sync with each other.
+  String _normalizeToLocalMobile(String phone) {
     var digits = phone.replaceAll(RegExp(r'\D'), '');
 
     if (digits.startsWith('8801') && digits.length == 13) {
@@ -85,6 +70,22 @@ class BdAppsApi {
       digits = '0$digits';
     }
     return digits;
+  }
+
+  /// Converts a BD phone number into BDApps subscriberId format:
+  /// tel:8801XXXXXXXXX
+  ///
+  /// Throws [BdAppsApiException] instead of crashing with a RangeError
+  /// if the input can't be normalized into a valid 11-digit number.
+  String toSubscriberId(String phone) {
+    final digits = _normalizeToLocalMobile(phone);
+
+    if (!RegExp(r'^0\d{10}$').hasMatch(digits)) {
+      throw BdAppsApiException('Invalid phone number format: $phone');
+    }
+
+    final tenDigits = digits.substring(1);
+    return 'tel:880$tenDigits';
   }
 
   /// Base POST helper — injects appName into every request automatically.
@@ -134,7 +135,7 @@ class BdAppsApi {
 
   /// Request OTP
   Future<OtpRequestResult> requestOtp(String userMobile) async {
-    final digits = _toLocalMobile(userMobile);
+    final digits = _normalizeToLocalMobile(userMobile);
 
     debugPrint('📤 [REQUEST OTP] Sending to: $digits');
     final data = await _post('/send_otp.php', {'userMobile': digits});
@@ -170,7 +171,8 @@ class BdAppsApi {
 
   /// Verify OTP
   Future<Map<String, dynamic>> verifyOtp(String referenceNo, String otp) async {
-    debugPrint('📤 [VERIFY OTP] ReferenceNo: $referenceNo | OTP: $otp');
+    // Never log the actual OTP value, even in debug builds.
+    debugPrint('📤 [VERIFY OTP] ReferenceNo: $referenceNo | OTP: ${'*' * otp.length}');
     final data =
     await _post('/verify_otp.php', {'referenceNo': referenceNo, 'otp': otp});
     debugPrint('✅ [VERIFY OTP] Response: $data');

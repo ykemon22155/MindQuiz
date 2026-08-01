@@ -16,7 +16,6 @@ dependencies:
 
   # Firebase Dependencies
   firebase_core: ^3.15.0
-  firebase_auth: ^5.7.0
   cloud_firestore: ^5.6.12
 
   # API এবং লোকাল স্টোরেজ
