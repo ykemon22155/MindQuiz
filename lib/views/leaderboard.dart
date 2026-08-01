@@ -17,13 +17,19 @@ class Leaderboard extends StatelessWidget {
         title: Text(l10n?.leaderboard ?? 'Leaderboard'),
         centerTitle: true,
       ),
-      // FutureBuilder ব্যবহার করা হয়েছে যা Web-এর JavaScript interop error এড়াতে সাহায্য করে
       body: FutureBuilder<QuerySnapshot>(
+        // Single-field orderBy only — this needs NO manual composite index.
+        // The previous version added `.orderBy('username')` as a second
+        // sort field, which Firestore can only run against a composite
+        // index. Without that index existing, it throws
+        // failed-precondition, which then hits the known Flutter-Web
+        // interop bug and shows up as the generic TypeError instead of
+        // the real "requires an index" message.
         future: FirebaseFirestore.instance
             .collection('leaderboard')
             .orderBy('score', descending: true) // সর্বোচ্চ স্কোর যার, সে উপরে থাকবে
             .limit(20) // টপ ২০ জন ইউজারের লিস্ট
-            .get(), // .snapshots() এর পরিবর্তে .get() ব্যবহার করা হয়েছে
+            .get(),
         builder: (context, snapshot) {
           // ১. লোডিং অবস্থা
           if (snapshot.connectionState == ConnectionState.waiting) {
@@ -92,7 +98,9 @@ class Leaderboard extends StatelessWidget {
             padding: const EdgeInsets.all(16.0),
             itemBuilder: (context, index) {
               final data = docs[index].data() as Map<String, dynamic>;
-              final name = data['name'] ?? 'Anonymous';
+              // 'name' is what quiz_screen.dart actually writes; 'username'
+              // is kept as a fallback only in case older docs used it.
+              final name = data['name'] ?? data['username'] ?? 'Anonymous';
               final score = data['score'] ?? 0;
               final rank = index + 1;
 
