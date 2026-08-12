@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:quiz_application_app/services/bdapps_api.dart';
 import 'package:quiz_application_app/services/bdapps_auth_service.dart';
+import 'package:quiz_application_app/services/user_data.dart';
 import 'package:quiz_application_app/views/enter_otp_page.dart';
 import 'package:quiz_application_app/views/main_shell.dart';
 import 'package:quiz_application_app/widgets/my_text_field.dart';
@@ -47,6 +48,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   void _goToApp() {
     if (!mounted) return;
+    UserData.load();
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => const MainShell()),
           (_) => false,
@@ -54,8 +56,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _continueWithPhone() async {
-    // Run TextFormField's own validator (via MyTextField) instead of a
-    // hand-rolled length check.
+    // Run TextFormField's own validator (via MyTextField)
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
     final phone = _phoneController.text.trim();
@@ -67,8 +68,10 @@ class _LoginScreenState extends State<LoginScreen> {
 
     try {
       // BDApps decides everything here: already-registered numbers are
-      // logged in immediately; new numbers trigger an OTP send and we
-      // catch UnregisteredUserException to move to the OTP step.
+      // logged in immediately (this now happens correctly inside
+      // loginWithPhone itself — no need to special-case the error
+      // message here anymore); new numbers throw
+      // UnregisteredUserException to move to the OTP step.
       await _bdAuth.loginWithPhone(phone);
       _goToApp();
     } on UnregisteredUserException catch (e) {
@@ -76,7 +79,10 @@ class _LoginScreenState extends State<LoginScreen> {
       setState(() => _isLoading = false);
       Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (_) => EnterOtpPage(mobileNumber: phone, referenceNo: e.referenceNo),
+          builder: (_) => EnterOtpPage(
+            mobileNumber: phone,
+            referenceNo: e.referenceNo,
+          ),
         ),
       );
       return;

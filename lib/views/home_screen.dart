@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:quiz_application_app/views/category_screen.dart';
+import 'package:quiz_application_app/widgets/category_list_section.dart';
+import 'package:quiz_application_app/widgets/user_avatar.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -8,12 +9,12 @@ class HomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     const backgroundColor = Color(0xFFFFF8F0);
     const textColor = Color(0xFF4A2E2B);
-    const primaryColor = Color(0xFFE27D60);
+    const secondaryColor = Color(0xFF2A9D8F);
 
     return Scaffold(
       backgroundColor: backgroundColor,
       body: SafeArea(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.all(24.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -44,19 +45,69 @@ class HomeScreen extends StatelessWidget {
                       ),
                     ],
                   ),
-                  const CircleAvatar(
-                    radius: 26,
-                    backgroundColor: Color(0x33E27D60),
-                    child: Icon(Icons.person_rounded, color: primaryColor, size: 28),
-                  ),
+                  // Requirement 7: was a static CircleAvatar with a fixed
+                  // person icon. Now shows the user's uploaded photo and
+                  // stays in sync the instant it changes on the Profile page.
+                  const UserAvatar(),
                 ],
               ),
               const SizedBox(height: 24),
 
-              // হোম পেজের কন্টেন্ট বা ক্যাটাগরি স্ক্রিন
-              const Expanded(
-                child: CategoryScreen(),
+              // --------------------------------------------------------
+              // Requirement 1: the orange "Exp. Points / Ranking" banner
+              // that used to sit here has been REMOVED entirely.
+              // --------------------------------------------------------
+
+              // Practice More - Daily Quiz banner
+              Text(
+                "⚡ Practice More",
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  color: textColor.withValues(alpha: 0.5),
+                ),
               ),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  color: secondaryColor,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.2),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.bolt_rounded, color: Colors.white, size: 22),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text("Daily Quiz", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
+                          const SizedBox(height: 4),
+                          Text(
+                            "20 mixed questions",
+                            style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.75)),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white, size: 14),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 28),
+
+              // Requirement 4: this used to embed the whole CategoryScreen
+              // (greeting + banner + list all over again). It now embeds
+              // just the list itself.
+              const CategoryListSection(),
             ],
           ),
         ),

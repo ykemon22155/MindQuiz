@@ -1,15 +1,6 @@
-// services/bdapps_auth_service.dart
-//
-// Dart port of auth.ts. Uses SharedPreferences in place of localStorage.
-// Depends on bdapps_api.dart (the Dart port of api.ts).
-//
-// Also owns a small in-memory cache of the current phone number so
-// callers that need synchronous access (e.g. DatabaseService's field
-// initializer) don't have to await SharedPreferences every time.
-// Call restoreSessionIfPossible() once at app startup, before anything
-// reads currentPhone.
 
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'bdapps_api.dart';
@@ -41,10 +32,6 @@ class AuthSession {
   );
 }
 
-/// Thrown by [BdAppsAuthService.loginWithPhone] for numbers not yet
-/// registered on BDApps. Carries the referenceNo the caller needs to
-/// show the OTP-entry step (equivalent to the "UNREGISTERED_USER"
-/// error + err.referenceNo pattern in auth.ts).
 class UnregisteredUserException implements Exception {
   final String referenceNo;
   UnregisteredUserException(this.referenceNo);
@@ -55,7 +42,6 @@ class UnregisteredUserException implements Exception {
 class BdAppsAuthService {
   static const String _storageKey = 'NewsQuickyai_session';
 
-  // Singleton so the in-memory cache below is shared across the whole app.
   static final BdAppsAuthService _instance = BdAppsAuthService._internal();
   factory BdAppsAuthService({BdAppsApi? api}) {
     if (api != null) _instance._api = api;
@@ -67,16 +53,10 @@ class BdAppsAuthService {
 
   String? _cachedPhone;
 
-  /// Synchronous access to the logged-in user's phone number. Null until
-  /// [restoreSessionIfPossible] has been awaited at least once, or before
-  /// any successful login/logout in this app run.
   String? get currentPhone => _cachedPhone;
 
   bool get isLoggedIn => _cachedPhone != null && _cachedPhone!.isNotEmpty;
 
-  /// Loads the stored session (if any) from disk into memory. Call this
-  /// once at app startup, before runApp(), so currentPhone is usable
-  /// synchronously everywhere else afterward.
   Future<String?> restoreSessionIfPossible() async {
     final session = await getStoredAuthSession();
     _cachedPhone = session?.user.phone;
@@ -116,22 +96,55 @@ class BdAppsAuthService {
   }
 
   /// Starts login for a phone number.
-  /// - Already-registered BDApps subscribers (E1351) are logged in immediately.
-  /// - New numbers throw [UnregisteredUserException] carrying a referenceNo,
-  ///   which the caller uses to show the OTP step.
   Future<AuthSession> loginWithPhone(String phone) async {
-    final res = await _api.requestOtp(phone);
+    // ১. প্রথমে সরাসরি ওটিপি এপিআই (requestOtp) কল করে চেক করব সার্ভার কী রেসপন্স দেয়
+    try {
+      final res = await _api.requestOtp(phone);
 
-    if (!res.success) {
-      if (res.statusCode == 'E1351') {
-        // Already registered on BDApps — treat as an existing subscriber login.
+      // যদি সার্ভার থেকে referenceNo দেয়, তার মানে ইউজার আনসাবস্ক্রাইবড বা নতুন — ওটিপি লাগবে
+      if (res.referenceNo != null && res.referenceNo!.isNotEmpty) {
+        throw UnregisteredUserException(res.referenceNo!);
+      }
+
+      // ২. যদি সার্ভার বলে যে ইউজার অলরেডি রেজিস্টার্ড (E1351),
+      // তবে কোনো ওটিপি চাইবে না — সরাসরি সেশন সেভ করে হোম পেজে ঢুকিয়ে দেব।
+      if (!res.success) {
+        final message = (res.message ?? '').toLowerCase();
+        final looksAlreadyRegistered =
+            res.statusCode == 'E1351' || message.contains('already registered');
+
+        if (looksAlreadyRegistered) {
+          debugPrint('✅ [LOGIN] User is already registered. Bypassing OTP directly to home.');
+          return _setStoredAuthSession(phone);
+        }
+        throw BdAppsApiException(res.message ?? 'লগইন করা যায়নি, আবার চেষ্টা করুন');
+      }
+
+      if (res.success && res.referenceNo == null) {
         return _setStoredAuthSession(phone);
       }
-      throw BdAppsApiException(res.message ?? 'লগইন করা যায়নি, আবার চেষ্টা করুন');
-    }
+    } catch (e) {
+      if (e is UnregisteredUserException) rethrow;
+      if (e is BdAppsApiException) rethrow;
 
-    if (res.referenceNo != null) {
-      throw UnregisteredUserException(res.referenceNo!);
+      // ৩. যদি নেটওয়ার্ক বা অন্য কোনো কারণে উপরে এক্সেপশন হয়, তখন সাবস্ক্রিপশন স্ট্যাটাস চেক করে ফ্যালব্যাক হ্যান্ডেল করব
+      try {
+        final subscriptionStatus = await _api.checkSubscriptionStatus(phone);
+        debugPrint('🔍 [LOGIN] Fallback Subscription Status: $subscriptionStatus');
+
+        if (subscriptionStatus.toUpperCase() == 'UNREGISTERED' ||
+            subscriptionStatus.toUpperCase() == 'E1951') {
+          final otpRes = await _api.requestOtp(phone);
+          throw UnregisteredUserException(otpRes.referenceNo ?? '');
+        } else {
+          return _setStoredAuthSession(phone);
+        }
+      } catch (subError) {
+        if (subError is UnregisteredUserException) rethrow;
+        debugPrint('⚠️ [LOGIN] Fallback error: $subError');
+      }
+
+      throw BdAppsApiException('লগইন করা যায়নি, আবার চেষ্টা করুন');
     }
 
     throw BdAppsApiException('লগইন করা যায়নি, আবার চেষ্টা করুন');
@@ -146,3 +159,5 @@ class BdAppsAuthService {
     return _setStoredAuthSession(phone);
   }
 }
+
+

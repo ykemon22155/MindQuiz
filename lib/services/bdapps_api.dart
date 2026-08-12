@@ -1,8 +1,4 @@
 // services/bdapps_api.dart
-//
-// Dart port of api.ts. Talks to the same PHP backend
-// (appsbackend.lokhalapps.com/api/v1), which expects a JSON body with
-// `appName` on every request (see app_auth.php / app_credentials.php).
 
 import 'dart:convert';
 import 'package:dio/dio.dart';
@@ -24,7 +20,6 @@ class OtpRequestResult {
   });
 }
 
-/// Thrown for any non-success response from the backend.
 class BdAppsApiException implements Exception {
   final String message;
   BdAppsApiException(this.message);
@@ -34,31 +29,22 @@ class BdAppsApiException implements Exception {
 
 class BdAppsApi {
   static const String _baseUrl = 'https://bdappsdigitalapps.com/NADB26117';
-
-  // Must exactly match a key in app_credentials.php on the backend.
-  // Currently registered on the BDApps backend as 'MindQuiz'.
   static const String _appName = 'mindquiz';
 
   late final Dio _dio;
 
   BdAppsApi({Dio? dio})
-      : _dio = dio ??
-      Dio(
-        BaseOptions(
-          baseUrl: _baseUrl,
-          connectTimeout: const Duration(seconds: 15),
-          receiveTimeout: const Duration(seconds: 15),
-          contentType: 'application/json',
-        ),
-      );
+      : _dio =
+      dio ??
+          Dio(
+            BaseOptions(
+              baseUrl: _baseUrl,
+              connectTimeout: const Duration(seconds: 15),
+              receiveTimeout: const Duration(seconds: 15),
+              contentType: 'application/json',
+            ),
+          );
 
-  /// Normalizes any reasonable input (with or without country code,
-  /// spaces, dashes, +) down to the bare local-mobile format the
-  /// backend expects: 01XXXXXXXXX (11 digits, leading 0).
-  ///
-  /// Used by both [toSubscriberId] and [requestOtp] — previously this
-  /// logic was duplicated in two places and had drifted slightly out
-  /// of sync with each other.
   String _normalizeToLocalMobile(String phone) {
     var digits = phone.replaceAll(RegExp(r'\D'), '');
 
@@ -72,11 +58,6 @@ class BdAppsApi {
     return digits;
   }
 
-  /// Converts a BD phone number into BDApps subscriberId format:
-  /// tel:8801XXXXXXXXX
-  ///
-  /// Throws [BdAppsApiException] instead of crashing with a RangeError
-  /// if the input can't be normalized into a valid 11-digit number.
   String toSubscriberId(String phone) {
     final digits = _normalizeToLocalMobile(phone);
 
@@ -88,7 +69,6 @@ class BdAppsApi {
     return 'tel:880$tenDigits';
   }
 
-  /// Base POST helper — injects appName into every request automatically.
   Future<Map<String, dynamic>> _post(
       String endpoint,
       Map<String, dynamic> body,
@@ -109,13 +89,13 @@ class BdAppsApi {
     }
   }
 
-  /// Check subscription status (REGISTERED / UNREGISTERED)
   Future<String> checkSubscriptionStatus(String userMobile) async {
     final subscriberId = toSubscriberId(userMobile);
     debugPrint('📤 [CHECK SUBSCRIPTION] Checking for: $subscriberId');
 
-    final data =
-    await _post('/check_subscription.php', {'subscriberId': subscriberId});
+    final data = await _post('/check_subscription.php', {
+      'subscriberId': subscriberId,
+    });
     debugPrint('✅ [CHECK SUBSCRIPTION] Response: $data');
 
     if (data['statusCode'] == 'E1951') {
@@ -126,14 +106,14 @@ class BdAppsApi {
     if (data['statusCode'] != 'S1000') {
       debugPrint('❌ [CHECK SUBSCRIPTION] Failed: $data');
       throw BdAppsApiException(
-        (data['statusDetail'] as String?) ?? 'Failed to check subscription status',
+        (data['statusDetail'] as String?) ??
+            'Failed to check subscription status',
       );
     }
 
     return (data['subscriptionStatus'] as String?) ?? 'UNREGISTERED';
   }
 
-  /// Request OTP
   Future<OtpRequestResult> requestOtp(String userMobile) async {
     final digits = _normalizeToLocalMobile(userMobile);
 
@@ -141,13 +121,26 @@ class BdAppsApi {
     final data = await _post('/send_otp.php', {'userMobile': digits});
     debugPrint('✅ [REQUEST OTP] Response: $data');
 
+    // যদি সার্ভার থেকে referenceNo দেওয়া থাকে, সেটি লুফে নেব (E1351 বা অন্য যেকোনো ক্ষেত্রেই হোক না কেন)
+    final refNo = data['referenceNo'] as String?;
+    if (refNo != null && refNo.isNotEmpty) {
+      return OtpRequestResult(
+        success: data['success'] == true || data['statusCode'] == 'E1351',
+        referenceNo: refNo,
+        message: data['message'] as String?,
+        statusCode: data['statusCode'] as String?,
+        statusDetail: data['statusDetail'] as String?,
+      );
+    }
+
     final message = ((data['message'] as String?) ?? '').toLowerCase();
-    if (data['statusCode'] == 'E1351' || message.contains('already registered')) {
+    if (data['statusCode'] == 'E1351' ||
+        message.contains('already registered')) {
       debugPrint('ℹ️ [REQUEST OTP] User already registered on BDApps');
       return OtpRequestResult(
         success: false,
         message: (data['message'] as String?) ?? 'user already registered',
-        referenceNo: null,
+        referenceNo: refNo,
         statusCode: (data['statusCode'] as String?) ?? 'E1351',
       );
     }
@@ -169,12 +162,14 @@ class BdAppsApi {
     );
   }
 
-  /// Verify OTP
   Future<Map<String, dynamic>> verifyOtp(String referenceNo, String otp) async {
-    // Never log the actual OTP value, even in debug builds.
-    debugPrint('📤 [VERIFY OTP] ReferenceNo: $referenceNo | OTP: ${'*' * otp.length}');
-    final data =
-    await _post('/verify_otp.php', {'referenceNo': referenceNo, 'otp': otp});
+    debugPrint(
+      '📤 [VERIFY OTP] ReferenceNo: $referenceNo | OTP: ${'*' * otp.length}',
+    );
+    final data = await _post('/verify_otp.php', {
+      'referenceNo': referenceNo,
+      'otp': otp,
+    });
     debugPrint('✅ [VERIFY OTP] Response: $data');
 
     if (data['statusCode'] != 'S1000') {
@@ -187,13 +182,28 @@ class BdAppsApi {
     return data;
   }
 
-  /// Unsubscribe user
   Future<Map<String, dynamic>> unsubscribe(String userMobile) async {
     final subscriberId = toSubscriberId(userMobile);
     debugPrint('📤 [UNSUBSCRIBE] for: $subscriberId');
-    final data =
-    await _post('/unsubscribe.php', {'subscriberId': subscriberId});
+    final data = await _post('/unsubscribe.php', {
+      'subscriberId': subscriberId,
+    });
     debugPrint('✅ [UNSUBSCRIBE] Response: $data');
-    return data;
+
+    final statusCode = data['statusCode'];
+    final isSuccess = data['success'] == true;
+
+    if (isSuccess || statusCode == 'S1000' || statusCode == 'E1951') {
+      debugPrint('🎉 [UNSUBSCRIBE] Success or Already Unsubscribed.');
+      return data;
+    }
+
+    debugPrint('❌ [UNSUBSCRIBE] Failed: $data');
+    throw BdAppsApiException(
+      (data['statusDetail'] as String?) ??
+          (data['message'] as String?) ??
+          (data['error'] as String?) ??
+          'Failed to unsubscribe',
+    );
   }
 }

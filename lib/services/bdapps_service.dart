@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:developer';
 
 import 'package:flutter/foundation.dart';
@@ -21,16 +22,35 @@ class BdappsService {
   // Replace with the deployed BDApps endpoint when known.
   static const String _baseUrl = 'https://bdappsdigitalapps.com/NADB26117';
 
-  /// Returns `true` when [mobile] is already REGISTERED on the
-  /// BDApps backend. The default implementation resolves to `false`
-  /// so the UI can still render before the endpoint is wired up.
+  /// Returns `true` when [mobile] is currently REGISTERED on the
+  /// BDApps backend.
+  ///
+  /// FIX: this used to call `is_subscribed.php` with a GET + query
+  /// param — that file doesn't exist on the backend (the real one is
+  /// `check_subscription.php`, which reads a POST JSON body, not
+  /// query params). Every call was silently failing and returning
+  /// `false`, which is why anything relying on this (SubscriptionGate)
+  /// never reflected real subscription status. Now it calls the real
+  /// endpoint the same way BdAppsApi.checkSubscriptionStatus does.
   static Future<bool> isSubscribed(String mobile) async {
     if (mobile.trim().isEmpty) return false;
     try {
-      final uri = Uri.parse('$_baseUrl/is_subscribed.php').replace(
-        queryParameters: <String, String>{'mobile': mobile},
+      var digits = mobile.replaceAll(RegExp(r'\D'), '');
+      if (digits.startsWith('880') && digits.length == 13) {
+        digits = '0${digits.substring(3)}';
+      } else if (digits.startsWith('88') && digits.length == 12) {
+        digits = '0${digits.substring(2)}';
+      } else if (!digits.startsWith('0') && digits.length == 10) {
+        digits = '0$digits';
+      }
+      final subscriberId = 'tel:88${digits.substring(1)}';
+
+      final uri = Uri.parse('$_baseUrl/check_subscription.php');
+      final res = await http.post(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'subscriberId': subscriberId}),
       );
-      final res = await http.get(uri);
       if (kDebugMode) {
         log('isSubscribed -> response', name: 'BdappsService', error: {
           'mobile': mobile,
@@ -39,13 +59,11 @@ class BdappsService {
         });
       }
       if (res.statusCode != 200) return false;
-      // Expected success body: { "success": true, "subscribed": true }
-      // The implementation simply treats any 200 with "true"/"1" in
-      // the body as subscribed. Adjust once the real endpoint is live.
-      final body = res.body.toLowerCase();
-      return body.contains('"subscribed":true') ||
-          body.contains('"subscribed": true') ||
-          body.contains('"is_subscribed":true');
+
+      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      if (data['isSubscribed'] == true) return true;
+      final status = (data['subscriptionStatus'] as String? ?? '').toUpperCase();
+      return status == 'REGISTERED';
     } catch (e, stack) {
       if (kDebugMode) {
         log('isSubscribed -> failed', name: 'BdappsService', error: e, stackTrace: stack);

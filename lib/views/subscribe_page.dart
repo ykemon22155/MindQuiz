@@ -3,7 +3,7 @@ import 'package:quiz_application_app/l10n/app_localizations.dart';
 import 'package:quiz_application_app/services/bdapps_auth_service.dart';
 import 'package:quiz_application_app/services/bdapps_api.dart';
 import 'package:quiz_application_app/views/enter_otp_page.dart';
-import 'package:quiz_application_app/views/login_screen.dart';
+import 'package:quiz_application_app/views/auth_gate.dart';
 import 'package:quiz_application_app/views/main_shell.dart';
 
 class SubscribePage extends StatefulWidget {
@@ -30,7 +30,7 @@ class _SubscribePageState extends State<SubscribePage> {
     if (!mounted) return;
     Navigator.pushAndRemoveUntil(
       context,
-      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      MaterialPageRoute(builder: (_) => const AuthGate()),
           (_) => false,
     );
   }

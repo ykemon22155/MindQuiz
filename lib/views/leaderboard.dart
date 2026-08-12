@@ -27,7 +27,7 @@ class Leaderboard extends StatelessWidget {
         // the real "requires an index" message.
         future: FirebaseFirestore.instance
             .collection('leaderboard')
-            .orderBy('score', descending: true) // সর্বোচ্চ স্কোর যার, সে উপরে থাকবে
+            .orderBy('score', descending: true) // সর্বোচ্চ (সঞ্চিত) স্কোর যার, সে উপরে থাকবে
             .limit(20) // টপ ২০ জন ইউজারের লিস্ট
             .get(),
         builder: (context, snapshot) {
@@ -101,7 +101,17 @@ class Leaderboard extends StatelessWidget {
               // 'name' is what quiz_screen.dart actually writes; 'username'
               // is kept as a fallback only in case older docs used it.
               final name = data['name'] ?? data['username'] ?? 'Anonymous';
+              // Requirement 3: this is now the cumulative total across
+              // every quiz the user has ever finished (quiz_screen.dart
+              // writes `FieldValue.increment(...)` instead of overwriting).
               final score = data['score'] ?? 0;
+              // Unsubscribed users keep their score/history — we just show
+              // a small muted badge instead of hiding them.
+              final isSubscribed = data['is_subscribed'] ?? true;
+              // Requirement 7: synced avatar. quiz_screen.dart / profile_screen.dart
+              // write this field whenever the signed-in user has uploaded a
+              // photo, so any player's picture shows up here too.
+              final avatarUrl = data['avatarUrl'] as String?;
               final rank = index + 1;
 
               // টপ ৩ জনের জন্য আলাদা মেডেল বা কালার কোড
@@ -121,15 +131,38 @@ class Leaderboard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: rankColor ?? colorScheme.primary.withValues(alpha: 0.2),
-                    child: Text(
-                      '$rank',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: rankColor != null ? Colors.black : colorScheme.primary,
+                  leading: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      CircleAvatar(
+                        backgroundColor: rankColor ?? colorScheme.primary.withValues(alpha: 0.2),
+                        backgroundImage: (avatarUrl != null && avatarUrl.isNotEmpty)
+                            ? NetworkImage(avatarUrl)
+                            : null,
+                        child: (avatarUrl == null || avatarUrl.isEmpty)
+                            ? Text(
+                                '$rank',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: rankColor != null ? Colors.black : colorScheme.primary,
+                                ),
+                              )
+                            : null,
                       ),
-                    ),
+                      if (avatarUrl != null && avatarUrl.isNotEmpty)
+                        Positioned(
+                          bottom: -2,
+                          right: -2,
+                          child: CircleAvatar(
+                            radius: 9,
+                            backgroundColor: rankColor ?? colorScheme.primary,
+                            child: Text(
+                              '$rank',
+                              style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white),
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                   title: Text(
                     name,
@@ -138,6 +171,12 @@ class Leaderboard extends StatelessWidget {
                       fontSize: 16,
                     ),
                   ),
+                  subtitle: isSubscribed == false
+                      ? Text(
+                          'Inactive subscription',
+                          style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant),
+                        )
+                      : null,
                   trailing: Text(
                     '$score pts',
                     style: TextStyle(
@@ -155,3 +194,4 @@ class Leaderboard extends StatelessWidget {
     );
   }
 }
+

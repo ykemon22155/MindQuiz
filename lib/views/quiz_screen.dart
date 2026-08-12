@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:quiz_application_app/services/bdapps_auth_service.dart';
+import 'package:quiz_application_app/services/user_data.dart';
 import '../services/api_service.dart';
 import '../model/quiz_ques_model.dart';
 import 'result_screen.dart';
@@ -27,7 +28,14 @@ class _QuizScreenState extends State<QuizScreen> {
   Timer? _timer;
   int _timeLeft = 15;
   bool _isTimerStarted = false;
-  bool _isSubmitting = false; // ডাবল সাবমিট রোধ করার জন্য
+  bool _isSubmitting = false; // ডাবল সাবমিট রোধ করার জন্য (final save)
+
+  // Requirement 2 (score bug — secondary hardening; the primary cause was
+  // in quiz_ques_model.dart reading the wrong JSON key, now fixed there).
+  // This guard additionally protects against the timer firing and a
+  // button tap both calling `_nextQuestion` for the SAME question in the
+  // same frame, which would have counted that answer twice.
+  bool _isAdvancing = false;
 
   @override
   void initState() {
@@ -55,9 +63,21 @@ class _QuizScreenState extends State<QuizScreen> {
     return '${phone.substring(0, 3)}****${phone.substring(phone.length - 3)}';
   }
 
-  // ফায়ারস্টোরে স্কোর সেভ করার মেথড — এখন ফোন নাম্বার-ভিত্তিক (কোনো Firebase Auth নেই)
-  // ফোন নাম্বার-কে ডকুমেন্ট আইডি হিসেবে ব্যবহার করা হয়েছে যাতে প্রতিবার নতুন এন্ট্রি
-  // তৈরি না হয় — শুধু আগের সেরা স্কোরের চেয়ে বেশি হলেই আপডেট হবে।
+  // Requirement 3: Firestore leaderboard write.
+  //
+  // OLD BEHAVIOUR: read the existing doc, and only overwrote `score` if
+  // the just-finished quiz's score was strictly greater than the stored
+  // one — so the leaderboard only ever showed the single BEST attempt,
+  // never the sum of everything the user has played.
+  //
+  // NEW BEHAVIOUR: every finished quiz ADDS its score to the user's
+  // running total via `FieldValue.increment(...)`, which also works if
+  // the document doesn't exist yet (Firestore treats a missing numeric
+  // field as 0 before incrementing). We stamp `is_subscribed: true` here
+  // because playing a quiz only happens while subscribed; unsubscribing
+  // (profile_screen.dart) flips this flag to false WITHOUT touching
+  // `score`, so history/score is never lost and resubscribing simply
+  // resumes adding to the same total.
   Future<void> _saveScoreToFirestore(int finalScore) async {
     if (_isSubmitting) return;
     setState(() {
@@ -75,20 +95,24 @@ class _QuizScreenState extends State<QuizScreen> {
 
       final docRef = FirebaseFirestore.instance.collection('leaderboard').doc(phone);
 
-      await FirebaseFirestore.instance.runTransaction((transaction) async {
-        final snapshot = await transaction.get(docRef);
-        final existingScore = (snapshot.data()?['score'] as num?)?.toInt() ?? 0;
+      // Prefer a real display name if the user has set one on the Profile
+      // page; otherwise fall back to the masked phone number as before.
+      final profileName = UserData.userName;
+      final displayName = (profileName.isNotEmpty && profileName != 'Quiz Player')
+          ? profileName
+          : _maskPhone(phone);
 
-        // শুধু নতুন স্কোর আগের সেরা স্কোরের চেয়ে বেশি হলেই লিখবে
-        if (finalScore > existingScore) {
-          transaction.set(docRef, {
-            'name': _maskPhone(phone),
-            'phone': phone,
-            'score': finalScore,
-            'timestamp': FieldValue.serverTimestamp(),
-          });
-        }
-      });
+      final avatarUrl = UserData.userImageUrl;
+      final hasRealAvatar = avatarUrl != UserData.placeholderImageUrl && avatarUrl.startsWith('http');
+
+      await docRef.set({
+        'name': displayName,
+        'phone': phone,
+        'score': FieldValue.increment(finalScore), // cumulative total, never overwritten
+        'is_subscribed': true,
+        'lastPlayedAt': FieldValue.serverTimestamp(),
+        if (hasRealAvatar) 'avatarUrl': avatarUrl,
+      }, SetOptions(merge: true));
     } catch (e) {
       debugPrint("Failed to save score: $e");
     } finally {
@@ -101,16 +125,20 @@ class _QuizScreenState extends State<QuizScreen> {
   }
 
   void _nextQuestion(List<QuizQuestion> questions) async {
+    if (_isAdvancing) return; // guard against double-fire (timer + tap)
+    _isAdvancing = true;
+
     _timer?.cancel();
     final currentQuestion = questions[_currentQuestionIndex];
 
-    // উত্তর ঠিক হলে স্কোর বাড়ানো
-    if (_selectedIndex != -1) {
-      if (_selectedIndex == currentQuestion.correctAnswerIndex) {
-        setState(() {
-          _score++;
-        });
-      }
+    // `_selectedIndex == -1` means "no answer chosen" (timed out or
+    // skipped) and must NOT be counted as correct. `correctAnswerIndex`
+    // now comes from the real API field (see quiz_ques_model.dart).
+    if (_selectedIndex != -1 &&
+        currentQuestion.correctAnswerIndex >= 0 &&
+        currentQuestion.correctAnswerIndex < currentQuestion.options.length &&
+        _selectedIndex == currentQuestion.correctAnswerIndex) {
+      _score++;
     }
 
     if (_currentQuestionIndex < questions.length - 1) {
@@ -118,6 +146,7 @@ class _QuizScreenState extends State<QuizScreen> {
         _currentQuestionIndex++;
         _selectedIndex = -1;
       });
+      _isAdvancing = false;
       _startTimer(questions);
     } else {
       // কুইজ শেষ! ফায়ারস্টোরে স্কোর সেভ করে তারপর রেজাল্ট স্ক্রিনে যাওয়া
@@ -134,6 +163,8 @@ class _QuizScreenState extends State<QuizScreen> {
           ),
         );
       }
+      // Intentionally not resetting _isAdvancing here — this screen is
+      // about to be popped, so no further taps can reach this state.
     }
   }
 

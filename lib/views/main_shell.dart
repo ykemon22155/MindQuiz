@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:quiz_application_app/l10n/app_localizations.dart';
+import 'package:quiz_application_app/views/category_screen.dart';
 import 'package:quiz_application_app/views/home_screen.dart';
 import 'package:quiz_application_app/views/leaderboard.dart';
 import 'package:quiz_application_app/views/profile_screen.dart';
-import 'package:quiz_application_app/views/category_screen.dart';
 
 class MainShell extends StatefulWidget {
   const MainShell({super.key});
@@ -15,12 +15,11 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> {
   int _selectedIndex = 0;
 
-  // এখন শুধু ইউজার পেজগুলোর লিস্ট থাকবে (Home, Categories, Leaderboard, Profile)
-  late final List<Widget> _pages = [
-    const HomeScreen(),
-    const CategoryScreen(),
-    const Leaderboard(),
-    const ProfileScreen(),
+  static const List<Widget> _pages = [
+    HomeScreen(),
+    CategoryScreen(),
+    Leaderboard(),
+    ProfileScreen(),
   ];
 
   @override
